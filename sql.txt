@@ -1,0 +1,225 @@
+Q1.What money do we make on each month? Are we heavily reliant on holiday shopping?
+
+-in both 2010,2011 the company sold most in the October and November month right before holidays.
+-Data Cutoff 9th December 2011
+-Around 37% of total on/before holidays.It is moderate and healthy year around.
+
+Q2.Who are our Top 10 VIP customers, and how much of our total revenue do they control?
+
+Q3. Which are the top 5 products with the highest average revenue?
+
+Q4.Products which sells good even in non-holiday seasons ?
+
+Q5.Outside of our home base (United Kingdom), which international markets are growing the fastest and deserve more marketing budget?
+
+Q6.What are our 'Cash Cow' products that we must never allow to go out of stock?
+
+Q7.Which of our paying customers haven't bought anything in the last 3 months and might have abandoned us for a competitor?
+
+Q8.Which products have the highest cancellation/return rates, and how much "Net Revenue" are they costing the business?
+
+
+-- SELECT count(*) FROM retail_db.sales_data;
+
+
+#Q1.When do we make our money? Are we heavily reliant on holiday
+#shopping?
+
+# calculate revenue by months of the year
+-- select year, month , round(sum(total_revenue),2) as 'monthly_revenue',
+-- count(distinct(invoice)) as 'total_orders'
+-- from retail_db.sales_data
+-- where is_cancelled=0 and quantity>0
+-- group by year,month
+-- order by year, month
+
+#total percentage of sales in holiday season
+WITH HolidaySales AS (
+    SELECT SUM(total_revenue) as holiday_rev
+    FROM sales_data
+    WHERE is_cancelled = 0 AND quantity > 0 AND month IN (10, 11, 12)
+),
+TotalSales AS (
+    -- Calculate total revenue for the entire dataset
+    SELECT SUM(total_Revenue) as total_rev
+    FROM sales_data
+    WHERE is_cancelled = 0 AND quantity > 0
+)
+
+SELECT
+    ROUND(holiday_rev, 2) AS Holiday_Revenue,
+    ROUND(total_rev, 2) AS Total_Revenue,
+    ROUND((holiday_rev / total_rev) * 100, 2) AS Holiday_Reliance_Percentage
+FROM HolidaySales
+CROSS JOIN TotalSales;
+
+
+-- SELECT * FROM retail_db.sales_data
+
+#Q2.Who are our Top 10 VIP customers, and how much
+-- of our total revenue do they control?
+
+with total_sales as (
+select sum(total_revenue) as grand_total
+from retail_db.sales_data
+WHERE is_cancelled = 0 AND quantity > 0 and customer_id !=0.0 and
+customer_id!=0
+),
+ top_10_vip as (
+select customer_id, country, sum(total_revenue) as 'total_spent',
+count(distinct invoice) as 'total_orders'
+from retail_db.sales_data
+where is_cancelled = 0 AND quantity > 0 and customer_id !=0.0 and customer_id !=0
+group by customer_id,country
+order by total_spent desc limit 10)
+
+SELECT vips.customer_id,
+    vips.country,
+    vips.total_orders,
+    ROUND(vips.total_spent, 2) AS vip_revenue,
+    ROUND((vips.total_spent / ts.grand_total) * 100, 2) AS percentage_of_total
+FROM top_10_vip vips
+CROSS JOIN total_Sales ts;
+
+
+-- select * from sales_data
+-- Q3. Which are the top 5 products with the highest revenue genration?
+
+select stockcode as 'item_id', description,sum(quantity) as 'total_sold'
+,ROUND(SUM(total_revenue), 2) AS total_revenue
+from retail_db.sales_data
+where is_cancelled = 0 AND quantity > 0 and customer_id !=0.0
+and customer_id !=0
+group by stockcode , description
+order by total_revenue desc limit 5
+
+
+#percentage hold bby top 5 sold products
+WITH total_sales AS (
+    SELECT SUM(total_revenue) as total_rev
+    FROM sales_data
+    WHERE is_cancelled = 0 AND quantity > 0 AND customer_id !=0.0
+and customer_id !=0
+),
+top_5_products AS (
+select round(SUM(total_revenue), 2) AS total_revenue_top5
+   from retail_db.sales_data
+   where is_cancelled = 0 AND quantity > 0 and customer_id !=0.0
+   and customer_id !=0
+   group by stockcode , description
+   order by total_revenue_top5 desc limit 5
+),
+top_5_total AS (
+    -- 3. Sum the Top 5 together (1 Row)
+    SELECT SUM(total_revenue_top5) AS top_5_rev
+    FROM top_5_products
+)
+
+SELECT
+    ROUND(ts.total_rev, 2) AS Total_Revenue,
+    ROUND(t5.top_5_rev, 2) AS Total_Revenue_by_top_5_sold_products,
+    ROUND((t5.top_5_rev/ts.total_rev) * 100, 2) AS Percentage_hold_by_top_5_soldProducts
+FROM total_sales ts
+CROSS JOIN top_5_total t5;
+
+
+ #Q4.Products which sells good even in non-holiday seasons ?
+
+select
+    StockCode AS item_id,
+    Description,
+    SUM(quantity) AS Non_Holiday_Volume,
+    ROUND(SUM(total_revenue), 2) AS Non_Holiday_Revenue
+FROM sales_data
+WHERE is_cancelled = 0
+  AND quantity > 0 AND customer_id != '0.0' AND customer_id != '0'
+  AND Month NOT IN (10, 11, 12)
+GROUP BY stockcode, Description
+ORDER BY Non_Holiday_Revenue DESC
+LIMIT 10;
+
+
+select country,ROUND(SUM(total_revenue),2) as total_revenue,
+count(distinct customer_id) as unique_customers,
+count(distinct invoice) as total_orders
+from retail_db.sales_data
+where country != 'UNITED KINGDOM' and is_cancelled = 0 AND quantity > 0 and customer_id !=0.0
+and customer_id !=0
+group by country
+order by total_revenue desc
+
+
+WITH Total_Sales AS (
+    -- 1. Get the Grand Total (All Countries)
+    SELECT SUM(total_revenue) AS total_rev
+    FROM sales_data
+    WHERE is_cancelled = 0 AND quantity > 0 AND customer_id != '0.0' AND customer_id != '0'
+),
+Abroad_Sales AS (
+    -- 2. Get the Total for everyone OUTSIDE the UK
+    SELECT SUM(total_revenue) AS abroad_rev
+    FROM sales_data
+    WHERE is_cancelled = 0 AND quantity > 0 AND customer_id != '0.0' AND customer_id != '0'
+      AND country != 'United Kingdom'
+)
+
+-- 3. Calculate the Percentage
+SELECT
+    ROUND(ts.total_rev, 2) AS Total_Global_Revenue,
+    ROUND(abs.abroad_rev, 2) AS Total_Abroad_Revenue,
+    ROUND((abs.abroad_rev / ts.total_rev) * 100, 2) AS Percentage_From_Abroad
+FROM Total_Sales ts
+CROSS JOIN Abroad_Sales abs;
+
+
+#Q6.What are our 'Cash Cow' products that we must never allow to go
+#out of stock?
+
+SELECT
+    StockCode AS item_id,
+    Description,
+    SUM(Quantity) AS Total_Units_Sold,
+    ROUND(SUM(Total_Revenue), 2) AS Total_Cash_Generated
+FROM sales_data
+WHERE Is_Cancelled = 0
+  AND Quantity > 0
+  AND `Customer ID` != '0.0'
+  AND `Customer ID` != '0'
+GROUP BY StockCode, Description
+ORDER BY Total_Units_Sold DESC
+LIMIT 10;
+
+
+-- Q7.Which of our paying customers haven't bought anything
+-- in the last 3 months and might have abandoned us for a competitor?
+
+WITH Max_Date AS (
+    SELECT MAX(invoicedate) AS Dataset_End_Date
+    FROM sales_data
+),
+Customer_Stats AS (
+    SELECT
+        customer_id,
+        MAX(invoicedate) AS Last_Purchase_Date,
+        ROUND(SUM(total_revenue), 2) AS Lifetime_Value
+    FROM sales_data
+    WHERE is_cancelled = 0
+      AND quantity > 0
+      AND customer_id != '0.0'
+      AND customer_id != '0'
+    GROUP BY customer_id
+)
+
+SELECT
+    c.customer_id,
+    c.Last_Purchase_Date,
+    DATEDIFF(m.Dataset_End_Date, c.Last_Purchase_Date) AS Days_Since_Last_Purchase,
+    c.Lifetime_Value
+FROM Customer_Stats c
+CROSS JOIN Max_Date m
+WHERE DATEDIFF(m.Dataset_End_Date, c.Last_Purchase_Date) >= 90
+ORDER BY c.Lifetime_Value DESC limit 10;
+
+
+-- Q8.Which products have the highest cancellation/return rates,
+-- and how much "Net Revenue" are they costing the business?
